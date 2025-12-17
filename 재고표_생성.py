@@ -23,6 +23,21 @@ def format_date(date_value):
     return date_obj.strftime('%m/%d')
 
 
+def format_quantity_date(quantity, date_value):
+    """
+    수량(월/일) 형식으로 변환
+    예: 16, 2026-11-25 -> 16(11/25)
+    """
+    if pd.isna(quantity) or quantity == '' or quantity == 0:
+        return ""
+
+    date_str = format_date(date_value)
+    if date_str == "":
+        return ""
+
+    return f"{int(quantity)}({date_str})"
+
+
 def create_inventory_report(input_file, output_file):
     """
     재고표 생성
@@ -39,28 +54,30 @@ def create_inventory_report(input_file, output_file):
 
     print(f"   ✓ 정리표 데이터 읽기 완료: {len(df)}개 행")
 
-    # 필요한 컬럼만 추출
-    # 정리표 컬럼: 제품코드, Brand Name, 아주, 잔량, 소비기한
+    # 필요한 컬럼만 추출하고 형식 변환
+    df['아주/날짜'] = df.apply(
+        lambda row: format_quantity_date(row['아주'], row['소비기한']),
+        axis=1
+    )
+    df['잔량/날짜'] = df.apply(
+        lambda row: format_quantity_date(row['잔량'], row['소비기한']),
+        axis=1
+    )
+
+    # 같은 제품코드 + 제품명 + 소비기한을 가진 행들을 그룹화
+    # 아주/날짜와 잔량/날짜를 합침
+    grouped = df.groupby(['제품코드', 'Brand Name', '소비기한']).agg({
+        '아주/날짜': lambda x: ' '.join([v for v in x if v != '']),
+        '잔량/날짜': lambda x: ' '.join([v for v in x if v != ''])
+    }).reset_index()
+
+    # 결과 DataFrame 생성
     result = pd.DataFrame()
-
-    result['제품코드'] = df['제품코드']
-    result['제품명'] = df['Brand Name']
-
-    # 아주/날짜 생성
-    result['아주/날짜'] = df.apply(
-        lambda row: f"{int(row['아주'])}/{format_date(row['소비기한'])}"
-        if pd.notna(row['아주']) and row['아주'] != '' and row['아주'] != 0
-        else "",
-        axis=1
-    )
-
-    # 잔량/날짜 생성
-    result['잔량/날짜'] = df.apply(
-        lambda row: f"{int(row['잔량'])}/{format_date(row['소비기한'])}"
-        if pd.notna(row['잔량']) and row['잔량'] != '' and row['잔량'] != 0
-        else "",
-        axis=1
-    )
+    result['제품코드'] = grouped['제품코드']
+    result['제품명'] = grouped['Brand Name']
+    result['아주/날짜'] = grouped['아주/날짜']
+    result['일반/날짜'] = ""  # 비워둠
+    result['잔량/날짜'] = grouped['잔량/날짜']
 
     # 빈 행 제거 (아주와 잔량 둘 다 없는 행)
     result = result[
